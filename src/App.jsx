@@ -458,16 +458,16 @@ export default function App() {
                 <p className="text-lg text-slate-500">We've generated the matched attendance records.</p>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 max-w-3xl mx-auto">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
                   <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Matched</span>
                   <span className="text-4xl font-extrabold text-blue-600">{matched.length}</span>
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
                   <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Absent</span>
                   <span className="text-4xl font-extrabold text-red-500">{absent.length}</span>
                 </div>
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col">
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
                   <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Unmatched Zoom</span>
                   <span className="text-4xl font-extrabold text-slate-700">{unmatchedZoom.length}</span>
                 </div>
