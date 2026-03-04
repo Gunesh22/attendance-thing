@@ -149,7 +149,8 @@ export default function App() {
             }
           }
 
-          const id = zEmail || zName.toLowerCase();
+          const cleanedZName = cleanName(zName);
+          const id = zEmail || cleanedZName;
 
           allZoomEntries.push({
             name: zName,
