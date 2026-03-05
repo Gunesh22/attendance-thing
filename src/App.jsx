@@ -291,13 +291,27 @@ export default function App() {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new();
 
-    const wsMatched = XLSX.utils.json_to_sheet(matched.map(m => ({
+    // Deduplicate matched entries by regData.id, summing durations
+    const mergedMap = new Map();
+    matched.forEach(m => {
+      const key = m.regData.id || m.regData.Name;
+      if (mergedMap.has(key)) {
+        const existing = mergedMap.get(key);
+        existing.zoomData.Duration += m.zoomData.Duration;
+        existing.zoomNames.push(m.zoomData.Name);
+      } else {
+        mergedMap.set(key, { ...m, zoomNames: [m.zoomData.Name] });
+      }
+    });
+    const mergedMatched = Array.from(mergedMap.values());
+
+    const wsMatched = XLSX.utils.json_to_sheet(mergedMatched.map(m => ({
       'Registered Name': m.regData.Name,
       'Registered Phone': m.regData.Phone,
       'Registered Email': m.regData.Email,
-      'Zoom Name': m.zoomData.Name,
+      'Zoom Name(s)': m.zoomNames.join(', '),
       'Zoom Email': m.zoomData.Email,
-      'Attended Time (Mins)': m.zoomData.Duration,
+      'Total Attended Time (Mins)': m.zoomData.Duration,
       'Match Type': m.Confidence,
       'WhatsApp/Email Message': `Hi ${m.regData.Name}, thanks for attending for ${m.zoomData.Duration} minutes!`
     })));
@@ -317,6 +331,13 @@ export default function App() {
       'Total Attended (Mins)': z.Duration
     })));
     XLSX.utils.book_append_sheet(wb, wsUnmatchedZoom, "Unmatched Zoom Users");
+
+    const wsIgnored = XLSX.utils.json_to_sheet(unmatchedZoom.filter(z => z.ignored).map(z => ({
+      'Zoom Name': z.Name,
+      'Zoom Email': z.Email,
+      'Total Attended (Mins)': z.Duration
+    })));
+    XLSX.utils.book_append_sheet(wb, wsIgnored, "Ignored Zoom Users");
 
     XLSX.writeFile(wb, "Attendance_Report.xlsx");
     toast.success("Report downloaded successfully!");
