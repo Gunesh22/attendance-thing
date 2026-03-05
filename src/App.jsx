@@ -291,16 +291,24 @@ export default function App() {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new();
 
-    // Deduplicate matched entries by regData.id, summing durations
+    // Deduplicate matched entries by registered Name + Email, summing durations
     const mergedMap = new Map();
     matched.forEach(m => {
-      const key = m.regData.id || m.regData.Name;
+      const key = (m.regData.Name + '||' + (m.regData.Email || '')).toLowerCase();
       if (mergedMap.has(key)) {
         const existing = mergedMap.get(key);
-        existing.zoomData.Duration += m.zoomData.Duration;
-        existing.zoomNames.push(m.zoomData.Name);
+        existing.totalDuration += (m.zoomData.Duration || 0);
+        if (m.zoomData.Name && !existing.zoomNames.includes(m.zoomData.Name)) {
+          existing.zoomNames.push(m.zoomData.Name);
+        }
       } else {
-        mergedMap.set(key, { ...m, zoomNames: [m.zoomData.Name] });
+        mergedMap.set(key, {
+          regData: m.regData,
+          zoomEmail: m.zoomData.Email,
+          totalDuration: m.zoomData.Duration || 0,
+          zoomNames: [m.zoomData.Name],
+          Confidence: m.Confidence
+        });
       }
     });
     const mergedMatched = Array.from(mergedMap.values());
@@ -310,10 +318,10 @@ export default function App() {
       'Registered Phone': m.regData.Phone,
       'Registered Email': m.regData.Email,
       'Zoom Name(s)': m.zoomNames.join(', '),
-      'Zoom Email': m.zoomData.Email,
-      'Total Attended Time (Mins)': m.zoomData.Duration,
+      'Zoom Email': m.zoomEmail,
+      'Total Attended Time (Mins)': m.totalDuration,
       'Match Type': m.Confidence,
-      'WhatsApp/Email Message': `Hi ${m.regData.Name}, thanks for attending for ${m.zoomData.Duration} minutes!`
+      'WhatsApp/Email Message': `Hi ${m.regData.Name}, thanks for attending for ${m.totalDuration} minutes!`
     })));
     XLSX.utils.book_append_sheet(wb, wsMatched, "Matched");
 
