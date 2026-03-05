@@ -262,17 +262,26 @@ export default function App() {
 
     if (!regData) return;
 
-    setMatched(prev => [...prev, {
-      regData: regData,
-      zoomData: unmatchedZoom[zIdx],
-      Confidence: unmatchedZoom[zIdx].SuggestedMatch?.manuallySelected ? 'Manual Match' : 'Medium (Approved)'
-    }]);
+    const newZoomEntry = unmatchedZoom[zIdx];
 
-    if (!fromMatched) {
+    if (fromMatched) {
+      // Add duration to existing matched entry
+      setMatched(prev => prev.map(m =>
+        m.regData.id === regId
+          ? { ...m, zoomData: { ...m.zoomData, Duration: m.zoomData.Duration + newZoomEntry.Duration } }
+          : m
+      ));
+    } else {
+      setMatched(prev => [...prev, {
+        regData: regData,
+        zoomData: newZoomEntry,
+        Confidence: newZoomEntry.SuggestedMatch?.manuallySelected ? 'Manual Match' : 'Medium (Approved)'
+      }]);
       setAbsent(prev => prev.filter(r => r.id !== regId));
     }
+
     setUnmatchedZoom(prev => prev.filter(z => z.id !== zoomId));
-    toast.success("Match approved!");
+    toast.success(fromMatched ? "Duration added to existing match!" : "Match approved!");
   };
 
   const handleIgnore = (zoomId) => {
