@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, FileSpreadsheet, Users, CheckCircle2, ArrowLeft,
-  Download, Loader2, Link2, SkipForward, Check
+  Download, Loader2, Link2, SkipForward, Check, Search, X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import stringSimilarity from 'string-similarity';
@@ -69,8 +69,9 @@ export default function App() {
   const [absent, setAbsent] = useState([]);
   const [unmatchedZoom, setUnmatchedZoom] = useState([]);
 
-  const [pairRegId, setPairRegId] = useState("");
-  const [pairZoomId, setPairZoomId] = useState("");
+  // Search state for table
+  const [activeSearchId, setActiveSearchId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const getCols = (row) => {
     if (!row) return {};
@@ -152,7 +153,6 @@ export default function App() {
           zoomAggMap.get(id).duration += zDuration;
         });
 
-        // Add internal unique IDs
         const zoomAggList = Array.from(zoomAggMap.values()).map((z, i) => ({ ...z, zId: `zm_${i}` }));
 
         const matchedList = [];
@@ -177,7 +177,6 @@ export default function App() {
               break;
             }
 
-            // Phone Number Matching
             const isNumericObj = /^\d[\d\s\-\+\(\)]*$/.test(z.name.trim());
             if (isNumericObj && rPhone) {
               const zDigits = z.name.replace(/\D/g, '');
@@ -199,35 +198,42 @@ export default function App() {
           if (bestMatch && highestScore >= 0.8) {
             bestMatch.matched = true;
             matchedList.push({
-              regData: { Name: rName, Phone: rPhone, Email: rEmail },
+              regData: { id: `reg_${i}`, Name: rName, Phone: rPhone, Email: rEmail },
               zoomData: { Name: bestMatch.name, Email: bestMatch.email, Duration: bestMatch.duration },
-              Confidence: highestScore === 1 ? 'High (Exact Email)' : 'High (Name)'
+              Confidence: highestScore === 1 ? 'High (Exact Email/Phone)' : 'High (Name)'
             });
           } else {
-            // Treat as absent initially, but keep suggestion if any
             absentList.push({
               id: `reg_${i}`,
-              Name: rName, Phone: rPhone, Email: rEmail,
-              SuggestedZoomId: (bestMatch && highestScore >= 0.4) ? bestMatch.zId : null,
-              SuggestedScore: highestScore
+              Name: rName, Phone: rPhone, Email: rEmail
             });
           }
         });
 
+        // Compute suggestions for remaining zoom users
         const unmatchedZList = zoomAggList
           .filter(z => !z.matched)
-          .map(z => ({
-            id: z.zId,
-            Name: z.name,
-            Email: z.email,
-            Duration: z.duration
-          }));
+          .map(z => {
+            const suggestions = absentList.map(a => ({
+              ...a,
+              score: calculateSimilarity(a.Name, z.name)
+            })).filter(a => a.score >= 0.3).sort((a, b) => b.score - a.score);
+
+            return {
+              id: z.zId,
+              Name: z.name,
+              Email: z.email,
+              Duration: z.duration,
+              SuggestedMatch: suggestions.length > 0 ? suggestions[0] : null,
+              ignored: false
+            }
+          })
+          .sort((a, b) => b.Duration - a.Duration); // Sort by duration ascending so longest stay on top
 
         setMatched(matchedList);
         setAbsent(absentList);
         setUnmatchedZoom(unmatchedZList);
 
-        // Go straight to results if perfect match scenario, else review
         if (unmatchedZList.length === 0 || absentList.length === 0) setViewStep('results');
         else setViewStep('review');
 
@@ -247,7 +253,7 @@ export default function App() {
     setMatched(prev => [...prev, {
       regData: absent[rIdx],
       zoomData: unmatchedZoom[zIdx],
-      Confidence: 'Medium (Manually Approved)'
+      Confidence: unmatchedZoom[zIdx].SuggestedMatch?.manuallySelected ? 'Manual Match' : 'Medium (Approved)'
     }]);
 
     setAbsent(prev => prev.filter(r => r.id !== regId));
@@ -255,27 +261,9 @@ export default function App() {
     toast.success("Match approved!");
   };
 
-  const handleManualPair = () => {
-    if (!pairRegId || !pairZoomId) {
-      toast.error('Select one registered and one Zoom user to pair.');
-      return;
-    }
-    const rIdx = absent.findIndex(r => r.id === pairRegId);
-    const zIdx = unmatchedZoom.findIndex(z => z.id === pairZoomId);
-    if (rIdx < 0 || zIdx < 0) return;
-
-    setMatched(prev => [...prev, {
-      regData: absent[rIdx],
-      zoomData: unmatchedZoom[zIdx],
-      Confidence: 'Forced Manual Pair'
-    }]);
-
-    setAbsent(prev => prev.filter(r => r.id !== pairRegId));
-    setUnmatchedZoom(prev => prev.filter(z => z.id !== pairZoomId));
-    setPairRegId("");
-    setPairZoomId("");
-    toast.success("Users paired successfully!");
-  }
+  const handleIgnore = (zoomId) => {
+    setUnmatchedZoom(prev => prev.map(z => z.id === zoomId ? { ...z, ignored: true } : z));
+  };
 
   const handleDownload = () => {
     const wb = XLSX.utils.book_new();
@@ -300,7 +288,7 @@ export default function App() {
     })));
     XLSX.utils.book_append_sheet(wb, wsAbsent, "Absent");
 
-    const wsUnmatchedZoom = XLSX.utils.json_to_sheet(unmatchedZoom.map(z => ({
+    const wsUnmatchedZoom = XLSX.utils.json_to_sheet(unmatchedZoom.filter(z => !z.ignored).map(z => ({
       'Zoom Name': z.Name,
       'Zoom Email': z.Email,
       'Total Attended (Mins)': z.Duration
@@ -324,7 +312,7 @@ export default function App() {
       <Toaster position="top-right" />
 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 py-4 px-8 flex justify-between items-center shadow-sm sticky top-0 z-10">
+      <header className="bg-white border-b border-slate-200 py-4 px-8 flex justify-between items-center shadow-sm sticky top-0 z-50">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-inner shadow-blue-400">
             <Users size={20} />
@@ -357,7 +345,7 @@ export default function App() {
                     <Loader2 size={48} />
                   </motion.div>
                   <h2 className="text-2xl font-bold mb-3 text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">Matching Participants</h2>
-                  <p className="text-slate-500 font-medium max-w-xs">Applying AI fuzzy matching algorithms to accurately reconcile your records...</p>
+                  <p className="text-slate-500 font-medium max-w-xs">Applying AI fuzzy matching algorithms...</p>
                 </div>
               ) : (
                 <div className="w-full max-w-4xl mx-auto">
@@ -367,7 +355,6 @@ export default function App() {
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-8 mb-10">
-                    {/* Zoom */}
                     <div className="relative group cursor-pointer h-72">
                       <div className={`relative h-full bg-white border-2 border-dashed ${zoomFile ? 'border-blue-400 bg-blue-50/30' : 'border-slate-300 hover:border-blue-500'} rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all shadow-sm`}>
                         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110 ${zoomFile ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-50'}`}>
@@ -380,7 +367,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Reg */}
                     <div className="relative group cursor-pointer h-72">
                       <div className={`relative h-full bg-white border-2 border-dashed ${regFile ? 'border-emerald-400 bg-emerald-50/30' : 'border-slate-300 hover:border-emerald-500'} rounded-3xl p-8 flex flex-col items-center justify-center text-center transition-all shadow-sm`}>
                         <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110 ${regFile ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400 group-hover:bg-emerald-50'}`}>
@@ -404,74 +390,143 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* REVIEW VIEW */}
+          {/* TABLE REVIEW VIEW */}
           {viewStep === 'review' && (
-            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full max-w-5xl">
-              <div className="flex justify-between items-end mb-8 border-b border-slate-200 pb-5">
-                <div>
-                  <h2 className="text-3xl font-extrabold mb-2 text-slate-800">Review Matches</h2>
-                  <p className="text-slate-500">Some users couldn't be paired automatically. Pair them manually or skip to download.</p>
+            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full max-w-6xl">
+
+              {/* Context Bar */}
+              <div className="mb-6 flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <div className="flex gap-8 items-center text-center md:text-left">
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Auto Matched</p>
+                    <p className="text-3xl font-black text-emerald-500">{matched.length}</p>
+                  </div>
+                  <div className="w-px h-12 bg-slate-100"></div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Missing Reg</p>
+                    <p className="text-3xl font-black text-red-400">{absent.length}</p>
+                  </div>
+                  <div className="w-px h-12 bg-slate-100"></div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Pending Zoom Users</p>
+                    <p className="text-3xl font-black text-blue-600">{unmatchedZoom.filter(z => !z.ignored).length}</p>
+                  </div>
                 </div>
-                <button onClick={() => setViewStep('results')} className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-lg font-bold shadow-md hover:bg-slate-800 transition-colors">
-                  Skip & See Results <SkipForward size={18} />
+                <button
+                  onClick={() => {
+                    setIsProcessing(true);
+                    setTimeout(() => {
+                      setViewStep('results');
+                      setIsProcessing(false);
+                    }, 1200);
+                  }}
+                  className="bg-slate-900 text-white px-6 py-3.5 rounded-xl font-bold hover:shadow-lg transition flex items-center gap-2"
+                >
+                  {isProcessing ? 'Finalizing...' : 'Finish & Get Report'} <ArrowLeft size={18} className="rotate-180" />
                 </button>
               </div>
 
-              {/* Suggestions */}
-              {absent.filter(a => a.SuggestedZoomId && unmatchedZoom.find(z => z.id === a.SuggestedZoomId)).length > 0 && (
-                <div className="mb-10">
-                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-blue-700"><CheckCircle2 size={18} /> Suggested Matches</h3>
-                  <div className="grid gap-4">
-                    {absent.map(a => {
-                      const zMatch = a.SuggestedZoomId ? unmatchedZoom.find(z => z.id === a.SuggestedZoomId) : null;
-                      if (!zMatch) return null;
+              {/* Data Table */}
+              <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-visible relative z-10 transition-opacity ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="p-5 font-bold text-sm text-slate-600">Zoom User</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 w-24">Time</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 w-1/3">Match to Registered User</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 text-right w-48">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unmatchedZoom.filter(z => !z.ignored).length === 0 ? (
+                      <tr><td colSpan="4" className="p-10 text-center text-slate-500 font-medium">No pending users remaining! You're ready to export.</td></tr>
+                    ) : unmatchedZoom.filter(z => !z.ignored).map(z => {
+                      const isSearching = activeSearchId === z.id;
 
                       return (
-                        <div key={a.id} className="bg-white border text-sm border-blue-100 shadow-sm p-4 rounded-xl flex items-center justify-between">
-                          <div className="grid grid-cols-2 gap-8 flex-1">
-                            <div><span className="text-slate-400 font-semibold uppercase text-xs">Registered</span> <div className="font-bold text-base mt-1">{a.Name}</div> <div className="text-slate-500">{a.Email || a.Phone}</div></div>
-                            <div><span className="text-slate-400 font-semibold uppercase text-xs">Zoom</span> <div className="font-bold text-base mt-1">{zMatch.Name}</div> <div className="text-slate-500">{zMatch.Duration} mins</div></div>
-                          </div>
-                          <button onClick={() => handleApproveSuggestion(a.id, zMatch.id)} className="ml-4 shrink-0 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white px-4 py-2 rounded-lg font-bold transition flex items-center gap-2">
-                            <Check size={16} /> Approve Match
-                          </button>
-                        </div>
+                        <tr key={z.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 group">
+                          <td className="p-5 align-middle">
+                            <div className="font-bold text-slate-800 text-base">{z.Name}</div>
+                            {z.Email && <div className="text-sm text-slate-500 mt-0.5">{z.Email}</div>}
+                          </td>
+                          <td className="p-5 align-middle">
+                            <span className={`font-semibold ${z.Duration < 10 ? 'text-slate-400' : 'text-blue-600'}`}>{z.Duration}</span>
+                            <span className="text-slate-400 text-sm ml-1">min</span>
+                          </td>
+                          <td className="p-5 align-middle">
+                            {isSearching ? (
+                              <div className="relative">
+                                <div className="flex items-center bg-white border border-blue-400 rounded-lg px-3 py-2 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-all">
+                                  <Search size={16} className="text-blue-400 mr-2 shrink-0" />
+                                  <input
+                                    autoFocus
+                                    type="text"
+                                    className="w-full outline-none text-sm font-medium"
+                                    placeholder="Type name to search..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                  />
+                                  <button onClick={() => { setActiveSearchId(null); setSearchQuery(""); }}><X size={16} className="text-slate-400 hover:text-red-500" /></button>
+                                </div>
+
+                                <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl z-50 max-h-56 overflow-y-auto">
+                                  {absent.filter(a => a.Name.toLowerCase().includes(searchQuery.toLowerCase()) || (a.Email && a.Email.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 ? (
+                                    <div className="p-4 text-sm text-slate-500 text-center">No results found</div>
+                                  ) : absent.filter(a => a.Name.toLowerCase().includes(searchQuery.toLowerCase()) || (a.Email && a.Email.toLowerCase().includes(searchQuery.toLowerCase()))).map(a => (
+                                    <div key={a.id} onClick={() => {
+                                      const uz = [...unmatchedZoom];
+                                      const idx = uz.findIndex(u => u.id === z.id);
+                                      uz[idx].SuggestedMatch = { ...a, manuallySelected: true };
+                                      setUnmatchedZoom(uz);
+                                      setActiveSearchId(null);
+                                      setSearchQuery("");
+                                    }} className="p-3.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors">
+                                      <div className="font-bold text-sm text-slate-800">{a.Name}</div>
+                                      {a.Email && <div className="text-xs text-slate-500">{a.Email}</div>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div
+                                className={`border rounded-lg px-4 py-2.5 cursor-pointer flex justify-between items-center transition-all ${z.SuggestedMatch
+                                  ? (z.SuggestedMatch.manuallySelected ? 'bg-blue-50/50 border-blue-200 hover:border-blue-400' : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400')
+                                  : 'bg-white border-dashed border-slate-300 hover:bg-slate-50 hover:border-slate-400 text-slate-400 hover:text-slate-600'
+                                  }`}
+                                onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }}
+                              >
+                                {z.SuggestedMatch ? (
+                                  <>
+                                    <span className="font-bold text-sm text-slate-800">{z.SuggestedMatch.Name}</span>
+                                    {!z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-full">{Math.round(z.SuggestedMatch.score * 100)}% Match</span>}
+                                    {z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-full">Selected</span>}
+                                  </>
+                                ) : (
+                                  <span className="text-sm font-medium flex items-center gap-2"><Search size={14} className="opacity-70" /> Find registered user</span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-5 align-middle text-right space-x-2 whitespace-nowrap">
+                            {z.SuggestedMatch ? (
+                              <button onClick={() => handleApproveSuggestion(z.SuggestedMatch.id, z.id)} className="bg-slate-900 border border-slate-900 hover:bg-black text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all focus:ring-2 ring-slate-400 outline-none">Approve</button>
+                            ) : (
+                              <button onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all">Link...</button>
+                            )}
+                            <button onClick={() => handleIgnore(z.id)} className="bg-white border border-white group-hover:border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-bold transition-all">Ignore</button>
+                          </td>
+                        </tr>
                       )
                     })}
-                  </div>
-                </div>
-              )}
-
-              {/* Manual Matching */}
-              <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 mb-10">
-                <h3 className="text-lg font-bold mb-6 flex items-center gap-2"><Link2 size={18} /> Manual Link</h3>
-                <div className="grid md:grid-cols-2 gap-6 items-end">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-600 mb-2">Unmatched Registered Participants</label>
-                    <select className="w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-lg p-3 outline-none focus:ring-2 ring-blue-500" value={pairRegId} onChange={e => setPairRegId(e.target.value)}>
-                      <option value="">-- Select Registered User --</option>
-                      {absent.map(a => <option key={a.id} value={a.id}>{a.Name} {a.Email ? `(${a.Email})` : ''}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-600 mb-2">Unmatched Zoom Participants</label>
-                    <select className="w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-lg p-3 outline-none focus:ring-2 ring-blue-500" value={pairZoomId} onChange={e => setPairZoomId(e.target.value)}>
-                      <option value="">-- Select Zoom User --</option>
-                      {unmatchedZoom.map(z => <option key={z.id} value={z.id}>{z.Name} ({z.Duration} mins)</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="mt-6 text-right">
-                  <button onClick={handleManualPair} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:shadow-lg transition">Pair Users</button>
-                </div>
+                  </tbody>
+                </table>
               </div>
-
             </motion.div>
           )}
 
           {/* RESULTS VIEW */}
           {viewStep === 'results' && (
-            <motion.div key="results" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl">
+            <motion.div key="results" initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl mx-auto">
               <div className="text-center mb-10">
                 <div className="inline-flex items-center justify-center p-3 bg-emerald-100 text-emerald-600 rounded-full mb-4">
                   <CheckCircle2 size={28} />
@@ -483,26 +538,23 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 max-w-3xl mx-auto">
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
                   <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Matched</span>
-                  <span className="text-4xl font-extrabold text-blue-600">{matched.length}</span>
+                  <span className="text-4xl font-extrabold text-emerald-500">{matched.length}</span>
                 </div>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
                   <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Absent</span>
-                  <span className="text-4xl font-extrabold text-red-500">{absent.length}</span>
+                  <span className="text-4xl font-extrabold text-red-400">{absent.length}</span>
                 </div>
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col items-center text-center">
-                  <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Unmatched Zoom</span>
-                  <span className="text-4xl font-extrabold text-slate-700">{unmatchedZoom.length}</span>
+                  <span className="text-sm font-semibold tracking-wide text-slate-500 uppercase mb-2">Ignored Zoom Users</span>
+                  <span className="text-4xl font-extrabold text-slate-400">{unmatchedZoom.filter(z => z.ignored).length}</span>
                 </div>
               </div>
 
               <div className="bg-white rounded-3xl p-8 md:p-12 shadow-sm border border-slate-100 text-center relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-50 rounded-full blur-3xl -mr-20 -mt-20 opacity-60"></div>
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-50 rounded-full blur-3xl -ml-20 -mb-20 opacity-60"></div>
-
                 <h3 className="text-xl font-bold text-slate-800 mb-4 relative z-10">Your report is ready for export</h3>
-                <p className="text-slate-500 max-w-md mx-auto mb-8 relative z-10">The generated Excel file contains 3 distinct sheets: Matched, Absent, and Unmatched Zoom Users. <br /><br /><strong>Includes automatic WhatsApp format generation!</strong></p>
+                <p className="text-slate-500 max-w-md mx-auto mb-8 relative z-10 text-sm leading-relaxed">The generated Excel file contains 3 distinct sheets: Matched, Absent, and Ignored Zoom Users. <br /><br /><strong>Includes automatic WhatsApp format generation!</strong></p>
 
-                <button onClick={handleDownload} className="relative z-10 bg-emerald-500 text-white hover:bg-emerald-600 active:bg-emerald-700 px-8 py-4 rounded-xl font-bold text-lg inline-flex items-center gap-3 shadow-lg transition hover:-translate-y-0.5">
+                <button onClick={handleDownload} className="relative z-10 bg-emerald-500 text-white hover:bg-emerald-600 active:bg-emerald-700 px-8 py-4 rounded-xl font-bold text-lg inline-flex items-center gap-3 shadow-[0_8px_30px_rgba(16,185,129,0.3)] transition-all hover:shadow-[0_8px_30px_rgba(16,185,129,0.4)] hover:-translate-y-0.5 outline-none">
                   <Download size={22} /> Download Excel Report
                 </button>
               </div>
