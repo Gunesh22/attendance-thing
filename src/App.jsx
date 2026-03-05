@@ -246,17 +246,31 @@ export default function App() {
   };
 
   const handleApproveSuggestion = (regId, zoomId) => {
-    const rIdx = absent.findIndex(a => a.id === regId);
     const zIdx = unmatchedZoom.findIndex(z => z.id === zoomId);
-    if (rIdx < 0 || zIdx < 0) return;
+    if (zIdx < 0) return;
+
+    let regData = absent.find(a => a.id === regId);
+    let fromMatched = false;
+
+    if (!regData) {
+      const m = matched.find(m => m.regData.id === regId);
+      if (m) {
+        regData = m.regData;
+        fromMatched = true;
+      }
+    }
+
+    if (!regData) return;
 
     setMatched(prev => [...prev, {
-      regData: absent[rIdx],
+      regData: regData,
       zoomData: unmatchedZoom[zIdx],
       Confidence: unmatchedZoom[zIdx].SuggestedMatch?.manuallySelected ? 'Manual Match' : 'Medium (Approved)'
     }]);
 
-    setAbsent(prev => prev.filter(r => r.id !== regId));
+    if (!fromMatched) {
+      setAbsent(prev => prev.filter(r => r.id !== regId));
+    }
     setUnmatchedZoom(prev => prev.filter(z => z.id !== zoomId));
     toast.success("Match approved!");
   };
@@ -454,40 +468,49 @@ export default function App() {
                             <span className="text-slate-400 text-sm ml-1">min</span>
                           </td>
                           <td className="p-5 align-middle">
-                            {isSearching ? (
-                              <div className="relative">
-                                <div className="flex items-center bg-white border border-blue-400 rounded-lg px-3 py-2 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-all">
-                                  <Search size={16} className="text-blue-400 mr-2 shrink-0" />
-                                  <input
-                                    autoFocus
-                                    type="text"
-                                    className="w-full outline-none text-sm font-medium"
-                                    placeholder="Type name to search..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                  />
-                                  <button onClick={() => { setActiveSearchId(null); setSearchQuery(""); }}><X size={16} className="text-slate-400 hover:text-red-500" /></button>
-                                </div>
+                            {isSearching ? (() => {
+                              const q = searchQuery.toLowerCase();
+                              const absentItems = absent.filter(a => a.Name.toLowerCase().includes(q) || (a.Email && a.Email.toLowerCase().includes(q))).map(a => ({ ...a, _status: 'unmatched' }));
+                              const matchedItems = q.length > 0 ? matched.filter(m => m.regData.Name.toLowerCase().includes(q) || (m.regData.Email && m.regData.Email.toLowerCase().includes(q))).map(m => ({ id: m.regData.id, Name: m.regData.Name, Email: m.regData.Email, Phone: m.regData.Phone, _status: 'matched' })) : [];
+                              const allItems = [...absentItems, ...matchedItems];
 
-                                <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl z-50 max-h-56 overflow-y-auto">
-                                  {absent.filter(a => a.Name.toLowerCase().includes(searchQuery.toLowerCase()) || (a.Email && a.Email.toLowerCase().includes(searchQuery.toLowerCase()))).length === 0 ? (
-                                    <div className="p-4 text-sm text-slate-500 text-center">No results found</div>
-                                  ) : absent.filter(a => a.Name.toLowerCase().includes(searchQuery.toLowerCase()) || (a.Email && a.Email.toLowerCase().includes(searchQuery.toLowerCase()))).map(a => (
-                                    <div key={a.id} onClick={() => {
-                                      const uz = [...unmatchedZoom];
-                                      const idx = uz.findIndex(u => u.id === z.id);
-                                      uz[idx].SuggestedMatch = { ...a, manuallySelected: true };
-                                      setUnmatchedZoom(uz);
-                                      setActiveSearchId(null);
-                                      setSearchQuery("");
-                                    }} className="p-3.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors">
-                                      <div className="font-bold text-sm text-slate-800">{a.Name}</div>
-                                      {a.Email && <div className="text-xs text-slate-500">{a.Email}</div>}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : (
+                              return (
+                                <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setActiveSearchId(null); setSearchQuery(""); } }} tabIndex={-1}>
+                                  <div className="flex items-center bg-white border border-blue-400 rounded-lg px-3 py-2 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-all">
+                                    <Search size={16} className="text-blue-400 mr-2 shrink-0" />
+                                    <input
+                                      autoFocus
+                                      type="text"
+                                      className="w-full outline-none text-sm font-medium"
+                                      placeholder="Type name to search..."
+                                      value={searchQuery}
+                                      onChange={e => setSearchQuery(e.target.value)}
+                                    />
+                                    <button onClick={() => { setActiveSearchId(null); setSearchQuery(""); }}><X size={16} className="text-slate-400 hover:text-red-500" /></button>
+                                  </div>
+
+                                  <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl z-50 max-h-56 overflow-y-auto">
+                                    {allItems.length === 0 ? (
+                                      <div className="p-4 text-sm text-slate-500 text-center">No results found</div>
+                                    ) : allItems.map(a => (
+                                      <div key={a.id} onClick={() => {
+                                        const uz = [...unmatchedZoom];
+                                        const idx = uz.findIndex(u => u.id === z.id);
+                                        uz[idx].SuggestedMatch = { ...a, manuallySelected: true };
+                                        setUnmatchedZoom(uz);
+                                        setActiveSearchId(null);
+                                        setSearchQuery("");
+                                      }} className="p-3.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors flex items-center justify-between">
+                                        <div>
+                                          <div className="font-bold text-sm text-slate-800">{a.Name}</div>
+                                          {a.Email && <div className="text-xs text-slate-500">{a.Email}</div>}
+                                        </div>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-3 ${a._status === 'matched' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{a._status === 'matched' ? 'MATCHED' : 'UNMATCHED'}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>)
+                            })() : (
                               <div
                                 className={`border rounded-lg px-4 py-2.5 cursor-pointer flex justify-between items-center transition-all ${z.SuggestedMatch
                                   ? (z.SuggestedMatch.manuallySelected ? 'bg-blue-50/50 border-blue-200 hover:border-blue-400' : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400')
