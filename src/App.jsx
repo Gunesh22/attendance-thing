@@ -253,7 +253,8 @@ export default function App() {
     let fromMatched = false;
 
     if (!regData) {
-      const m = matched.find(m => m.regData.id === regId);
+      // Try finding by id first, then fallback to Name match
+      const m = matched.find(m => m.regData.id === regId) || matched.find(m => m.regData.Name === unmatchedZoom[zIdx]?.SuggestedMatch?.Name);
       if (m) {
         regData = m.regData;
         fromMatched = true;
@@ -265,10 +266,10 @@ export default function App() {
     const newZoomEntry = unmatchedZoom[zIdx];
 
     if (fromMatched) {
-      // Add duration to existing matched entry
+      // Add duration to existing matched entry — match by Name to be safe
       setMatched(prev => prev.map(m =>
-        m.regData.id === regId
-          ? { ...m, zoomData: { ...m.zoomData, Duration: m.zoomData.Duration + newZoomEntry.Duration } }
+        m.regData.Name === regData.Name
+          ? { ...m, zoomData: { ...m.zoomData, Name: m.zoomData.Name + ', ' + newZoomEntry.Name, Duration: m.zoomData.Duration + newZoomEntry.Duration } }
           : m
       ));
     } else {
@@ -291,22 +292,21 @@ export default function App() {
   const handleDownload = () => {
     const wb = XLSX.utils.book_new();
 
-    // Deduplicate matched entries by registered Name + Email, summing durations
+    // Deduplicate matched entries by Name, summing durations
     const mergedMap = new Map();
     matched.forEach(m => {
-      const key = (m.regData.Name + '||' + (m.regData.Email || '')).toLowerCase();
+      const key = m.regData.Name.toLowerCase();
       if (mergedMap.has(key)) {
         const existing = mergedMap.get(key);
         existing.totalDuration += (m.zoomData.Duration || 0);
-        if (m.zoomData.Name && !existing.zoomNames.includes(m.zoomData.Name)) {
-          existing.zoomNames.push(m.zoomData.Name);
-        }
+        const newNames = m.zoomData.Name.split(', ');
+        newNames.forEach(n => { if (!existing.zoomNames.includes(n)) existing.zoomNames.push(n); });
       } else {
         mergedMap.set(key, {
           regData: m.regData,
           zoomEmail: m.zoomData.Email,
           totalDuration: m.zoomData.Duration || 0,
-          zoomNames: [m.zoomData.Name],
+          zoomNames: m.zoomData.Name.split(', '),
           Confidence: m.Confidence
         });
       }
@@ -318,7 +318,7 @@ export default function App() {
       'Registered Phone': m.regData.Phone,
       'Registered Email': m.regData.Email,
       'Zoom Name(s)': m.zoomNames.join(', '),
-      'Zoom Email': m.zoomEmail,
+      'Zoom Email': m.zoomEmail || '',
       'Total Attended Time (Mins)': m.totalDuration,
       'Match Type': m.Confidence,
       'WhatsApp/Email Message': `Hi ${m.regData.Name}, thanks for attending for ${m.totalDuration} minutes!`
