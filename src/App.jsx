@@ -35,6 +35,16 @@ function calculateSimilarity(regName, zoomName) {
   }
   if (rParts.length === 1 && zParts[0] === rParts[0]) return 0.95;
 
+  // New strict initial check for cases like `Rahul M` == `Rahul Mehta`
+  if (zParts.length === 2 && rParts.length === 2) {
+    if (rParts[0] === zParts[0] && zParts[1].length === 1 && rParts[1].startsWith(zParts[1])) return 0.95;
+  }
+
+  // Reverse match (Mehta Rahul vs Rahul Mehta)
+  if (rParts.length === 2 && zParts.length === 2) {
+    if (rParts[0] === zParts[1] && rParts[1] === zParts[0]) return 0.95;
+  }
+
   return stringSimilarity.compareTwoStrings(r, z);
 }
 
@@ -165,6 +175,18 @@ export default function App() {
               highestScore = 1;
               bestMatch = z;
               break;
+            }
+
+            // Phone Number Matching
+            const isNumericObj = /^\d[\d\s\-\+\(\)]*$/.test(z.name.trim());
+            if (isNumericObj && rPhone) {
+              const zDigits = z.name.replace(/\D/g, '');
+              const rDigits = rPhone.replace(/\D/g, '');
+              if (zDigits.length >= 7 && (zDigits === rDigits || rDigits.includes(zDigits) || zDigits.includes(rDigits))) {
+                highestScore = 1;
+                bestMatch = z;
+                break;
+              }
             }
 
             const score = calculateSimilarity(rName, z.name);
