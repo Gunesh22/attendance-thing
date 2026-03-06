@@ -631,7 +631,7 @@ export default function App() {
                     const isSearching = activeSearchId === z.id;
 
                     return (
-                      <div key={z.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow relative z-10">
+                      <div key={z.id} className={`bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow relative ${isSearching ? 'z-40' : 'z-10'}`}>
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                           {/* Zoom User Column */}
                           <div className="flex-1 min-w-0">
