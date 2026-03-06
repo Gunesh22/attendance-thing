@@ -375,6 +375,7 @@ export default function App() {
 
   const handleIgnore = (zoomId) => {
     setUnmatchedZoom(prev => prev.map(z => z.id === zoomId ? { ...z, ignored: true } : z));
+    toast.success("User ignored");
   };
 
   const handleDownload = () => {
@@ -571,17 +572,35 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Filter Tabs */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button onClick={() => setActiveTab('suggested')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'suggested' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
-                  Suggested Matches ({unmatchedZoom.filter(z => !z.ignored && z.SuggestedMatch).length})
-                </button>
-                <button onClick={() => setActiveTab('unknown')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'unknown' ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
-                  Unknown Participants ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && !z.isDevice).length})
-                </button>
-                <button onClick={() => setActiveTab('devices')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'devices' ? 'bg-slate-200 text-slate-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
-                  Devices ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && z.isDevice).length})
-                </button>
+              {/* Filter Tabs & Sort Control */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setActiveTab('suggested')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'suggested' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                    Suggested Matches ({unmatchedZoom.filter(z => !z.ignored && z.SuggestedMatch).length})
+                  </button>
+                  <button onClick={() => setActiveTab('unknown')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'unknown' ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                    Unknown Participants ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && !z.isDevice).length})
+                  </button>
+                  <button onClick={() => setActiveTab('devices')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'devices' ? 'bg-slate-200 text-slate-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                    Unknown Devices ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && z.isDevice).length})
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                  <button
+                    onClick={() => handleSort('match')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sortConfig.key === 'match' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Match % {sortConfig.key === 'match' && (sortConfig.direction === 'desc' ? <ChevronDown size={14} /> : <ChevronUp size={14} />)}
+                  </button>
+                  <div className="w-px h-4 bg-slate-200"></div>
+                  <button
+                    onClick={() => handleSort('duration')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sortConfig.key === 'duration' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Duration {sortConfig.key === 'duration' && (sortConfig.direction === 'desc' ? <ChevronDown size={14} /> : <ChevronUp size={14} />)}
+                  </button>
+                </div>
               </div>
 
               {/* Data Cards List */}
