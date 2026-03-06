@@ -76,11 +76,13 @@ export default function App() {
   const getCols = (row) => {
     if (!row) return {};
     const keys = Object.keys(row);
-    const lowerKeys = keys.map(k => k.toLowerCase());
+    const lowerKeys = keys.map(k => k.toLowerCase().trim());
     return {
-      name: keys[lowerKeys.findIndex(k => k.includes('name'))] || keys[0],
+      name: keys[lowerKeys.findIndex(k => k === 'name' || k.includes('original name'))] || keys[lowerKeys.findIndex(k => k.includes('name') && !k.includes('first') && !k.includes('last'))] || keys[0],
+      firstName: keys[lowerKeys.findIndex(k => k.includes('first name') || k === 'fname' || k === 'first_name')],
+      lastName: keys[lowerKeys.findIndex(k => k.includes('last name') || k === 'lname' || k === 'last_name')],
       email: keys[lowerKeys.findIndex(k => k.includes('email'))],
-      phone: keys[lowerKeys.findIndex(k => k.includes('phone') || k.includes('mobile') || k.includes('contact'))],
+      phone: keys[lowerKeys.findIndex(k => k.includes('phone') || k.includes('mobile') || (k.includes('contact') && !k.includes('id')))],
       join: keys[lowerKeys.findIndex(k => k.includes('join'))],
       leave: keys[lowerKeys.findIndex(k => k.includes('leave'))],
       duration: keys[lowerKeys.findIndex(k => k.includes('duration'))],
@@ -128,7 +130,12 @@ export default function App() {
         const zoomAggMap = new Map();
 
         zoomData.forEach(zr => {
-          const zName = String(zr[zoomCols.name] || "").trim();
+          let zName = "";
+          if (zoomCols.firstName || zoomCols.lastName) {
+            zName = `${zr[zoomCols.firstName] || ""} ${zr[zoomCols.lastName] || ""}`.trim();
+          } else {
+            zName = String(zr[zoomCols.name] || "").trim();
+          }
           const zEmail = String(zr[zoomCols.email] || "").trim().toLowerCase();
 
           if (!zName && !zEmail) return;
@@ -159,7 +166,12 @@ export default function App() {
         const absentList = [];
 
         regData.forEach((rr, i) => {
-          const rName = String(rr[regCols.name] || "").trim();
+          let rName = "";
+          if (regCols.firstName || regCols.lastName) {
+            rName = `${rr[regCols.firstName] || ""} ${rr[regCols.lastName] || ""}`.trim();
+          } else {
+            rName = String(rr[regCols.name] || "").trim();
+          }
           const rEmail = String(rr[regCols.email] || "").trim().toLowerCase();
           const rPhone = String(rr[regCols.phone] || "").trim();
 
