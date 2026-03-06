@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, FileSpreadsheet, Users, CheckCircle2, ArrowLeft,
@@ -114,6 +114,25 @@ function parseTime(timeStr) {
 }
 
 export default function App() {
+  const CURRENT_VERSION = '7b0fbea_v2'; // Unique ID for cache busting
+
+  useEffect(() => {
+    const savedVersion = localStorage.getItem('app_version');
+    if (savedVersion !== CURRENT_VERSION) {
+      localStorage.setItem('app_version', CURRENT_VERSION);
+      // Hard refresh and clear all to get new code
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          for (let name of names) caches.delete(name);
+        }).finally(() => {
+          window.location.reload(true);
+        });
+      } else {
+        window.location.reload(true);
+      }
+    }
+  }, []);
+
   const [zoomFile, setZoomFile] = useState(null);
   const [regFile, setRegFile] = useState(null);
   const [zoomData, setZoomData] = useState(null);
@@ -438,6 +457,19 @@ export default function App() {
 
     XLSX.writeFile(wb, "Attendance_Report.xlsx");
     toast.success("Report downloaded successfully!");
+
+    // Clear cache/storage to ensure clean state and fresh assets for next session
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          for (let name of names) caches.delete(name);
+        });
+      }
+    } catch (e) {
+      console.error("Cache clear failed", e);
+    }
   };
 
   const reset = () => {
