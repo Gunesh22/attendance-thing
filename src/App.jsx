@@ -26,26 +26,76 @@ function calculateSimilarity(regName, zoomName) {
   if (r === z) return 1;
   if (!r || !z) return 0;
 
-  const rParts = r.split(' ');
-  const zParts = z.split(' ');
+  const rParts = r.split(' ').filter(Boolean);
+  const zParts = z.split(' ').filter(Boolean);
 
-  if (zParts.length === 1 && rParts[0] === zParts[0]) return 0.95;
-  if (zParts.length === 2 && rParts.length >= 2) {
-    if (rParts[0] === zParts[0] && rParts[1].startsWith(zParts[1])) return 0.95;
-  }
-  if (rParts.length === 1 && zParts[0] === rParts[0]) return 0.95;
-
-  // New strict initial check for cases like `Rahul M` == `Rahul Mehta`
-  if (zParts.length === 2 && rParts.length === 2) {
-    if (rParts[0] === zParts[0] && zParts[1].length === 1 && rParts[1].startsWith(zParts[1])) return 0.95;
+  // 1. Exact Token Set Intersection (Handles "Gunesh Sakhala" vs "Sakhala Gunesh")
+  const intersection = rParts.filter(rp => zParts.includes(rp));
+  if (intersection.length > 0 && intersection.length === rParts.length && intersection.length === zParts.length) {
+    return 1;
   }
 
-  // Reverse match (Mehta Rahul vs Rahul Mehta)
-  if (rParts.length === 2 && zParts.length === 2) {
-    if (rParts[0] === zParts[1] && rParts[1] === zParts[0]) return 0.95;
+  // 2. Strong Token & Initial Detection
+  let hasStrongTokenMatch = false;
+  let hasInitialMatch = false;
+
+  for (const zp of zParts) {
+    let bestSim = 0;
+    let isInitial = false;
+
+    for (const rp of rParts) {
+      if (rp === zp) {
+        bestSim = 1;
+      } else if (zp.length <= 3 && rp.length > zp.length && rp.startsWith(zp)) {
+        // e.g. zp="S", rp="Sakhala" -> Initial Match
+        bestSim = 1.0;
+        isInitial = true;
+      } else {
+        const sim = stringSimilarity.compareTwoStrings(rp, zp);
+        if (sim > bestSim) bestSim = sim;
+      }
+    }
+
+    if (bestSim >= 0.85) hasStrongTokenMatch = true;
+    if (isInitial) hasInitialMatch = true;
   }
 
-  return stringSimilarity.compareTwoStrings(r, z);
+  // 3. Fallback to standard similarities + token set ratio
+  let finalScore = 0;
+
+  if (intersection.length > 0) {
+    const diff1 = rParts.filter(word => !intersection.includes(word));
+    const diff2 = zParts.filter(word => !intersection.includes(word));
+    const combI = intersection.join(' ');
+    const s1c = [combI, ...diff1].join(' ').trim();
+    const s2c = [combI, ...diff2].join(' ').trim();
+
+    finalScore = Math.max(
+      stringSimilarity.compareTwoStrings(s1c, s2c),
+      stringSimilarity.compareTwoStrings(combI, s1c),
+      stringSimilarity.compareTwoStrings(combI, s2c)
+    );
+  } else {
+    const rReversed = rParts.slice().reverse().join(' ');
+    finalScore = Math.max(
+      stringSimilarity.compareTwoStrings(r, z),
+      stringSimilarity.compareTwoStrings(rReversed, z)
+    );
+  }
+
+  // 4. Boost Score for strong initial match combinations
+  // Matches "Gunesh S" vs "Gunesh Sakhala" -> 91%
+  if (hasStrongTokenMatch && hasInitialMatch) {
+    finalScore = Math.max(finalScore, 0.91);
+  }
+
+  // 5. Special Case: Zoom name is just one strong word (e.g. "Gunesh" vs "Gunesh Sakhala")
+  if (zParts.length === 1 && rParts.length > 1) {
+    const bestTokenSim = Math.max(...rParts.map(rp => stringSimilarity.compareTwoStrings(zParts[0], rp)));
+    if (bestTokenSim >= 0.8) finalScore = Math.max(finalScore, 0.85); // 85% to be slightly below extreme confidence
+  }
+
+  return finalScore;
 }
 
 function parseTime(timeStr) {
@@ -207,7 +257,7 @@ export default function App() {
             }
           }
 
-          if (bestMatch && highestScore >= 0.8) {
+          if (bestMatch && highestScore > 0.95) {
             bestMatch.matched = true;
             matchedList.push({
               regData: { id: `reg_${i}`, Name: rName, Phone: rPhone, Email: rEmail },
@@ -240,7 +290,12 @@ export default function App() {
               ignored: false
             }
           })
-          .sort((a, b) => b.Duration - a.Duration); // Sort by duration ascending so longest stay on top
+          .sort((a, b) => {
+            const scoreA = a.SuggestedMatch ? a.SuggestedMatch.score : -1;
+            const scoreB = b.SuggestedMatch ? b.SuggestedMatch.score : -1;
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return b.Duration - a.Duration;
+          });
 
         setMatched(matchedList);
         setAbsent(absentList);
@@ -456,7 +511,7 @@ export default function App() {
 
           {/* TABLE REVIEW VIEW */}
           {viewStep === 'review' && (
-            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full max-w-6xl">
+            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="w-full max-w-4xl mx-auto">
 
               {/* Context Bar */}
               <div className="mb-6 flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -492,13 +547,13 @@ export default function App() {
 
               {/* Data Table */}
               <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-visible relative z-10 transition-opacity ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
-                <table className="w-full text-left border-collapse">
+                <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="p-5 font-bold text-sm text-slate-600">Zoom User</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 w-24">Time</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 w-1/3">Match to Registered User</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 text-right w-48">Action</th>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
+                      <th className="p-5 font-bold text-sm text-slate-600 pl-8">Zoom User</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-28">Time</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-72">Match to Registered User</th>
+                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-56 pr-8">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -509,15 +564,15 @@ export default function App() {
 
                       return (
                         <tr key={z.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 group">
-                          <td className="p-5 align-middle">
+                          <td className="p-5 align-middle pl-8 w-1/3">
                             <div className="font-bold text-slate-800 text-base">{z.Name}</div>
                             {z.Email && <div className="text-sm text-slate-500 mt-0.5">{z.Email}</div>}
                           </td>
-                          <td className="p-5 align-middle">
+                          <td className="p-5 align-middle text-center">
                             <span className={`font-semibold ${z.Duration < 10 ? 'text-slate-400' : 'text-blue-600'}`}>{z.Duration}</span>
                             <span className="text-slate-400 text-sm ml-1">min</span>
                           </td>
-                          <td className="p-5 align-middle">
+                          <td className="p-5 align-middle px-4">
                             {isSearching ? (() => {
                               const q = searchQuery.toLowerCase();
                               const absentItems = absent.filter(a => a.Name.toLowerCase().includes(q) || (a.Email && a.Email.toLowerCase().includes(q))).map(a => ({ ...a, _status: 'unmatched' }));
@@ -580,13 +635,15 @@ export default function App() {
                               </div>
                             )}
                           </td>
-                          <td className="p-5 align-middle text-right space-x-2 whitespace-nowrap">
-                            {z.SuggestedMatch ? (
-                              <button onClick={() => handleApproveSuggestion(z.SuggestedMatch.id, z.id)} className="bg-slate-900 border border-slate-900 hover:bg-black text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all focus:ring-2 ring-slate-400 outline-none">Approve</button>
-                            ) : (
-                              <button onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all">Link...</button>
-                            )}
-                            <button onClick={() => handleIgnore(z.id)} className="bg-white border border-white group-hover:border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-bold transition-all">Ignore</button>
+                          <td className="p-5 align-middle text-center whitespace-nowrap pr-8">
+                            <div className="flex justify-center items-center gap-2">
+                              {z.SuggestedMatch ? (
+                                <button onClick={() => handleApproveSuggestion(z.SuggestedMatch.id, z.id)} className="bg-slate-900 border border-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all focus:ring-2 ring-slate-400 outline-none">Approve</button>
+                              ) : (
+                                <button onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all">Link...</button>
+                              )}
+                              <button onClick={() => handleIgnore(z.id)} className="bg-white border border-white group-hover:border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-bold transition-all">Ignore</button>
+                            </div>
                           </td>
                         </tr>
                       )
