@@ -79,8 +79,8 @@ export default function App() {
     const lowerKeys = keys.map(k => k.toLowerCase().trim());
     return {
       name: keys[lowerKeys.findIndex(k => k === 'name' || k.includes('original name'))] || keys[lowerKeys.findIndex(k => k.includes('name') && !k.includes('first') && !k.includes('last'))] || keys[0],
-      firstName: keys[lowerKeys.findIndex(k => k.includes('first name') || k === 'fname' || k === 'first_name')],
-      lastName: keys[lowerKeys.findIndex(k => k.includes('last name') || k === 'lname' || k === 'last_name')],
+      firstName: keys[lowerKeys.findIndex(k => k.includes('first') || k === 'fname')],
+      lastName: keys[lowerKeys.findIndex(k => k.includes('last') || k === 'lname')],
       email: keys[lowerKeys.findIndex(k => k.includes('email'))],
       phone: keys[lowerKeys.findIndex(k => k.includes('phone') || k.includes('mobile') || (k.includes('contact') && !k.includes('id')))],
       join: keys[lowerKeys.findIndex(k => k.includes('join'))],
@@ -562,7 +562,7 @@ export default function App() {
                                 </div>)
                             })() : (
                               <div
-                                className={`border rounded-lg px-4 py-2.5 cursor-pointer flex justify-between items-center transition-all ${z.SuggestedMatch
+                                className={`border rounded-lg px-4 py-2.5 cursor-pointer flex justify-between items-center transition-all min-w-0 ${z.SuggestedMatch
                                   ? (z.SuggestedMatch.manuallySelected ? 'bg-blue-50/50 border-blue-200 hover:border-blue-400' : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400')
                                   : 'bg-white border-dashed border-slate-300 hover:bg-slate-50 hover:border-slate-400 text-slate-400 hover:text-slate-600'
                                   }`}
@@ -570,12 +570,12 @@ export default function App() {
                               >
                                 {z.SuggestedMatch ? (
                                   <>
-                                    <span className="font-bold text-sm text-slate-800">{z.SuggestedMatch.Name}</span>
-                                    {!z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-full">{Math.round(z.SuggestedMatch.score * 100)}% Match</span>}
-                                    {z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-full">Selected</span>}
+                                    <span className="font-bold text-sm text-slate-800 truncate mr-2" title={z.SuggestedMatch.Name}>{z.SuggestedMatch.Name}</span>
+                                    {!z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap">{Math.round(z.SuggestedMatch.score * 100)}% Match</span>}
+                                    {z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap">Selected</span>}
                                   </>
                                 ) : (
-                                  <span className="text-sm font-medium flex items-center gap-2"><Search size={14} className="opacity-70" /> Find registered user</span>
+                                  <span className="text-sm font-medium flex items-center gap-2 whitespace-nowrap max-w-full"><Search size={14} className="opacity-70 shrink-0" /> <span className="truncate">Find registered user</span></span>
                                 )}
                               </div>
                             )}
