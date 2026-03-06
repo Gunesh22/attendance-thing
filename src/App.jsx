@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, FileSpreadsheet, Users, CheckCircle2, ArrowLeft,
-  Download, Loader2, Link2, SkipForward, Check, Search, X
+  Download, Loader2, Link2, SkipForward, Check, Search, X, ChevronUp, ChevronDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import stringSimilarity from 'string-similarity';
@@ -17,6 +17,13 @@ function cleanName(name) {
     n = n.replace(regex, "");
   });
   return n.trim().replace(/\s+/g, ' ');
+}
+
+function isDeviceName(name) {
+  if (!name) return false;
+  const n = String(name).toLowerCase();
+  const devices = ["iphone", "ipad", "phone", "galaxy", "samsung", "laptop", "pc", "mobile", "redmi", "oppo", "vivo", "realme", "oneplus", "macbook", "zoom user", "administrator", "admin", "device", "tablet", "desktop"];
+  return devices.some(d => n.includes(d));
 }
 
 function calculateSimilarity(regName, zoomName) {
@@ -122,6 +129,19 @@ export default function App() {
   // Search state for table
   const [activeSearchId, setActiveSearchId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const [activeTab, setActiveTab] = useState('suggested'); // suggested, unknown, devices
+
+  // Table sorting state
+  const [sortConfig, setSortConfig] = useState({ key: 'match', direction: 'desc' });
+
+  const handleSort = (key) => {
+    let direction = 'desc';
+    if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const getCols = (row) => {
     if (!row) return {};
@@ -279,7 +299,7 @@ export default function App() {
             const suggestions = absentList.map(a => ({
               ...a,
               score: calculateSimilarity(a.Name, z.name)
-            })).filter(a => a.score >= 0.3).sort((a, b) => b.score - a.score);
+            })).filter(a => a.score >= 0.75).sort((a, b) => b.score - a.score);
 
             return {
               id: z.zId,
@@ -287,7 +307,8 @@ export default function App() {
               Email: z.email,
               Duration: z.duration,
               SuggestedMatch: suggestions.length > 0 ? suggestions[0] : null,
-              ignored: false
+              ignored: false,
+              isDevice: isDeviceName(z.name)
             }
           })
           .sort((a, b) => {
@@ -517,18 +538,23 @@ export default function App() {
               <div className="mb-6 flex flex-col md:flex-row gap-6 md:gap-0 justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex gap-8 items-center text-center md:text-left">
                   <div>
-                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Auto Matched</p>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Matched</p>
                     <p className="text-3xl font-black text-emerald-500">{matched.length}</p>
                   </div>
                   <div className="w-px h-12 bg-slate-100"></div>
                   <div>
-                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Missing Reg</p>
-                    <p className="text-3xl font-black text-red-400">{absent.length}</p>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Needs Review</p>
+                    <p className="text-3xl font-black text-blue-600">{unmatchedZoom.filter(z => !z.ignored && z.SuggestedMatch && !z.isDevice).length}</p>
                   </div>
                   <div className="w-px h-12 bg-slate-100"></div>
                   <div>
-                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Pending Zoom Users</p>
-                    <p className="text-3xl font-black text-blue-600">{unmatchedZoom.filter(z => !z.ignored).length}</p>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Unknown</p>
+                    <p className="text-3xl font-black text-orange-400">{unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && !z.isDevice).length}</p>
+                  </div>
+                  <div className="w-px h-12 bg-slate-100"></div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Absent</p>
+                    <p className="text-3xl font-black text-red-400">{absent.length}</p>
                   </div>
                 </div>
                 <button
@@ -539,117 +565,150 @@ export default function App() {
                       setIsProcessing(false);
                     }, 1200);
                   }}
-                  className="bg-slate-900 text-white px-6 py-3.5 rounded-xl font-bold hover:shadow-lg transition flex items-center gap-2"
+                  className="bg-slate-900 w-full md:w-auto text-white px-6 py-3.5 rounded-xl font-bold hover:shadow-lg transition flex justify-center items-center gap-2"
                 >
                   {isProcessing ? 'Finalizing...' : 'Finish & Get Report'} <ArrowLeft size={18} className="rotate-180" />
                 </button>
               </div>
 
-              {/* Data Table */}
-              <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 overflow-visible relative z-10 transition-opacity ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-left">
-                      <th className="p-5 font-bold text-sm text-slate-600 pl-8">Zoom User</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-28">Time</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-72">Match to Registered User</th>
-                      <th className="p-5 font-bold text-sm text-slate-600 text-center w-56 pr-8">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unmatchedZoom.filter(z => !z.ignored).length === 0 ? (
-                      <tr><td colSpan="4" className="p-10 text-center text-slate-500 font-medium">No pending users remaining! You're ready to export.</td></tr>
-                    ) : unmatchedZoom.filter(z => !z.ignored).map(z => {
-                      const isSearching = activeSearchId === z.id;
+              {/* Filter Tabs */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button onClick={() => setActiveTab('suggested')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'suggested' ? 'bg-blue-100 text-blue-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                  Suggested Matches ({unmatchedZoom.filter(z => !z.ignored && z.SuggestedMatch).length})
+                </button>
+                <button onClick={() => setActiveTab('unknown')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'unknown' ? 'bg-orange-100 text-orange-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                  Unknown Participants ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && !z.isDevice).length})
+                </button>
+                <button onClick={() => setActiveTab('devices')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'devices' ? 'bg-slate-200 text-slate-700 shadow-sm' : 'bg-white border text-slate-500 hover:bg-slate-50'}`}>
+                  Devices ({unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && z.isDevice).length})
+                </button>
+              </div>
 
-                      return (
-                        <tr key={z.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50 group">
-                          <td className="p-5 align-middle pl-8 w-1/3">
-                            <div className="font-bold text-slate-800 text-base">{z.Name}</div>
-                            {z.Email && <div className="text-sm text-slate-500 mt-0.5">{z.Email}</div>}
-                          </td>
-                          <td className="p-5 align-middle text-center">
-                            <span className={`font-semibold ${z.Duration < 10 ? 'text-slate-400' : 'text-blue-600'}`}>{z.Duration}</span>
-                            <span className="text-slate-400 text-sm ml-1">min</span>
-                          </td>
-                          <td className="p-5 align-middle px-4">
-                            {isSearching ? (() => {
-                              const q = searchQuery.toLowerCase();
-                              const absentItems = absent.filter(a => a.Name.toLowerCase().includes(q) || (a.Email && a.Email.toLowerCase().includes(q))).map(a => ({ ...a, _status: 'unmatched' }));
-                              const matchedItems = q.length > 0 ? matched.filter(m => m.regData.Name.toLowerCase().includes(q) || (m.regData.Email && m.regData.Email.toLowerCase().includes(q))).map(m => ({ id: m.regData.id, Name: m.regData.Name, Email: m.regData.Email, Phone: m.regData.Phone, _status: 'matched' })) : [];
-                              const allItems = [...absentItems, ...matchedItems];
+              {/* Data Cards List */}
+              <div className={`space-y-3 relative z-10 transition-opacity ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}>
+                {(() => {
+                  const validUsers = unmatchedZoom.filter(z => {
+                    if (z.ignored) return false;
+                    if (activeTab === 'suggested') return z.SuggestedMatch;
+                    if (activeTab === 'unknown') return !z.SuggestedMatch && !z.isDevice;
+                    if (activeTab === 'devices') return !z.SuggestedMatch && z.isDevice;
+                    return true;
+                  });
 
-                              return (
-                                <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setActiveSearchId(null); setSearchQuery(""); } }} tabIndex={-1}>
-                                  <div className="flex items-center bg-white border border-blue-400 rounded-lg px-3 py-2 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-all">
-                                    <Search size={16} className="text-blue-400 mr-2 shrink-0" />
-                                    <input
-                                      autoFocus
-                                      type="text"
-                                      className="w-full outline-none text-sm font-medium"
-                                      placeholder="Type name to search..."
-                                      value={searchQuery}
-                                      onChange={e => setSearchQuery(e.target.value)}
-                                    />
-                                    <button onClick={() => { setActiveSearchId(null); setSearchQuery(""); }}><X size={16} className="text-slate-400 hover:text-red-500" /></button>
-                                  </div>
+                  if (validUsers.length === 0) {
+                    return <div className="bg-white rounded-2xl p-10 text-center text-slate-500 font-medium border border-slate-200 shadow-sm">No pending users in this category!</div>;
+                  }
 
-                                  <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl z-50 max-h-56 overflow-y-auto">
-                                    {allItems.length === 0 ? (
-                                      <div className="p-4 text-sm text-slate-500 text-center">No results found</div>
-                                    ) : allItems.map(a => (
-                                      <div key={a.id} onClick={() => {
-                                        const uz = [...unmatchedZoom];
-                                        const idx = uz.findIndex(u => u.id === z.id);
-                                        uz[idx].SuggestedMatch = { ...a, manuallySelected: true };
-                                        setUnmatchedZoom(uz);
-                                        setActiveSearchId(null);
-                                        setSearchQuery("");
-                                      }} className="p-3.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors flex items-center justify-between">
-                                        <div>
-                                          <div className="font-bold text-sm text-slate-800">{a.Name}</div>
-                                          {a.Email && <div className="text-xs text-slate-500">{a.Email}</div>}
-                                        </div>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-3 ${a._status === 'matched' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{a._status === 'matched' ? 'MATCHED' : 'UNMATCHED'}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>)
-                            })() : (
-                              <div
-                                className={`border rounded-lg px-4 py-2.5 cursor-pointer flex justify-between items-center transition-all min-w-0 ${z.SuggestedMatch
-                                  ? (z.SuggestedMatch.manuallySelected ? 'bg-blue-50/50 border-blue-200 hover:border-blue-400' : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400')
-                                  : 'bg-white border-dashed border-slate-300 hover:bg-slate-50 hover:border-slate-400 text-slate-400 hover:text-slate-600'
-                                  }`}
-                                onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }}
-                              >
-                                {z.SuggestedMatch ? (
-                                  <>
-                                    <span className="font-bold text-sm text-slate-800 truncate mr-2" title={z.SuggestedMatch.Name}>{z.SuggestedMatch.Name}</span>
-                                    {!z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap">{Math.round(z.SuggestedMatch.score * 100)}% Match</span>}
-                                    {z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap">Selected</span>}
-                                  </>
-                                ) : (
-                                  <span className="text-sm font-medium flex items-center gap-2 whitespace-nowrap max-w-full"><Search size={14} className="opacity-70 shrink-0" /> <span className="truncate">Find registered user</span></span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-5 align-middle text-center whitespace-nowrap pr-8">
-                            <div className="flex justify-center items-center gap-2">
-                              {z.SuggestedMatch ? (
-                                <button onClick={() => handleApproveSuggestion(z.SuggestedMatch.id, z.id)} className="bg-slate-900 border border-slate-900 hover:bg-black text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all focus:ring-2 ring-slate-400 outline-none">Approve</button>
-                              ) : (
-                                <button onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-all">Link...</button>
-                              )}
-                              <button onClick={() => handleIgnore(z.id)} className="bg-white border border-white group-hover:border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-100 px-4 py-2.5 rounded-lg text-sm font-bold transition-all">Ignore</button>
+                  const sortedUsers = [...validUsers].sort((a, b) => {
+                    if (sortConfig.key === 'match') {
+                      const scoreA = a.SuggestedMatch ? a.SuggestedMatch.score : -1;
+                      const scoreB = b.SuggestedMatch ? b.SuggestedMatch.score : -1;
+                      if (scoreB !== scoreA) return sortConfig.direction === 'desc' ? scoreB - scoreA : scoreA - scoreB;
+                    }
+                    return sortConfig.direction === 'desc' ? b.Duration - a.Duration : a.Duration - b.Duration;
+                  });
+
+                  return sortedUsers.map(z => {
+                    const isSearching = activeSearchId === z.id;
+
+                    return (
+                      <div key={z.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow relative z-10">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          {/* Zoom User Column */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-800 text-lg truncate" title={z.Name}>{z.Name}</span>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${z.Duration < 10 ? 'bg-slate-100 text-slate-500' : 'bg-indigo-50 text-indigo-600'}`}>
+                                {z.Duration} min
+                              </span>
                             </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                            {z.Email && <div className="text-sm text-slate-500 mt-1 truncate">{z.Email}</div>}
+                          </div>
+
+                          {/* Suggested Column & Actions combined for tight layout */}
+                          <div className="flex-1 min-w-0 flex flex-col md:flex-row items-stretch md:items-center gap-3 justify-end relative">
+                            <div className="w-full md:w-72 relative">
+                              {isSearching ? (() => {
+                                const q = searchQuery.toLowerCase();
+                                const absentItems = absent.filter(a => a.Name.toLowerCase().includes(q) || (a.Email && a.Email.toLowerCase().includes(q))).map(a => ({ ...a, _status: 'unmatched' }));
+                                const matchedItems = q.length > 0 ? matched.filter(m => m.regData.Name.toLowerCase().includes(q) || (m.regData.Email && m.regData.Email.toLowerCase().includes(q))).map(m => ({ id: m.regData.id, Name: m.regData.Name, Email: m.regData.Email, Phone: m.regData.Phone, _status: 'matched' })) : [];
+                                const allItems = [...absentItems, ...matchedItems];
+
+                                return (
+                                  <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) { setActiveSearchId(null); setSearchQuery(""); } }} tabIndex={-1}>
+                                    <div className="flex items-center bg-white border border-blue-400 rounded-lg px-3 py-2 shadow-[0_0_0_4px_rgba(59,130,246,0.1)] transition-all">
+                                      <Search size={16} className="text-blue-400 mr-2 shrink-0" />
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        className="w-full outline-none text-sm font-medium"
+                                        placeholder="Type name to search..."
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                      />
+                                      <button onClick={() => { setActiveSearchId(null); setSearchQuery(""); }}><X size={16} className="text-slate-400 hover:text-red-500" /></button>
+                                    </div>
+
+                                    <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 shadow-xl rounded-xl z-50 max-h-56 overflow-y-auto">
+                                      {allItems.length === 0 ? (
+                                        <div className="p-4 text-sm text-slate-500 text-center">No results found</div>
+                                      ) : allItems.map(a => (
+                                        <div key={a.id} onClick={() => {
+                                          const uz = [...unmatchedZoom];
+                                          const idx = uz.findIndex(u => u.id === z.id);
+                                          uz[idx].SuggestedMatch = { ...a, manuallySelected: true, score: 1 };
+                                          setUnmatchedZoom(uz);
+                                          setActiveSearchId(null);
+                                          setSearchQuery("");
+                                        }} className="p-3.5 hover:bg-blue-50 cursor-pointer border-b border-slate-100 last:border-0 transition-colors flex items-center justify-between">
+                                          <div className="min-w-0 pr-3">
+                                            <div className="font-bold text-sm text-slate-800 truncate">{a.Name}</div>
+                                            {a.Email && <div className="text-xs text-slate-500 truncate">{a.Email}</div>}
+                                          </div>
+                                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${a._status === 'matched' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{a._status === 'matched' ? 'MATCHED' : 'UNMATCHED'}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>)
+                              })() : (
+                                <div
+                                  className={`border rounded-xl px-4 py-3 cursor-pointer flex justify-between items-center transition-all min-w-0 ${z.SuggestedMatch
+                                    ? (z.SuggestedMatch.manuallySelected ? 'bg-blue-50/50 border-blue-200 hover:border-blue-400' : 'bg-emerald-50/50 border-emerald-200 hover:border-emerald-400')
+                                    : 'bg-slate-50 border-dashed border-slate-300 hover:bg-slate-100 hover:border-slate-400 text-slate-500'
+                                    }`}
+                                  onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }}
+                                >
+                                  {z.SuggestedMatch ? (
+                                    <>
+                                      <div className="flex flex-col min-w-0 mr-2">
+                                        <span className="font-bold text-sm text-slate-800 truncate" title={z.SuggestedMatch.Name}>{z.SuggestedMatch.Name}</span>
+                                        {z.SuggestedMatch.Email && <span className="text-xs text-slate-500 truncate">{z.SuggestedMatch.Email}</span>}
+                                      </div>
+                                      {!z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2 py-1 rounded-md shrink-0">{Math.round(z.SuggestedMatch.score * 100)}%</span>}
+                                      {z.SuggestedMatch.manuallySelected && <span className="text-xs font-bold text-blue-700 bg-blue-100/80 px-2 py-1 rounded-md shrink-0">Selected</span>}
+                                    </>
+                                  ) : (
+                                    <span className="text-sm font-medium flex items-center gap-2 max-w-full"><Search size={14} className="opacity-70 shrink-0" /> <span className="truncate">Search manual match...</span></span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Actions inline */}
+                            <div className="flex items-center gap-2 shrink-0">
+                              {z.SuggestedMatch ? (
+                                <button onClick={() => handleApproveSuggestion(z.SuggestedMatch.id, z.id)} className="bg-slate-900 border border-slate-900 hover:bg-black text-white px-5 py-3 rounded-xl text-sm font-bold shadow-sm transition-all focus:ring-2 ring-slate-400 outline-none">Approve</button>
+                              ) : (
+                                <button onClick={() => { setActiveSearchId(z.id); setSearchQuery(""); }} className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 px-5 py-3 rounded-xl text-sm font-bold shadow-sm transition-all">Link...</button>
+                              )}
+                              <button onClick={() => handleIgnore(z.id)} className="bg-white border border-transparent text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 px-4 py-3 rounded-xl text-sm font-bold transition-all">Ignore</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                })()}
               </div>
             </motion.div>
           )}
