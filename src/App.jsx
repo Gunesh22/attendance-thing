@@ -433,27 +433,12 @@ export default function App() {
     })));
     XLSX.utils.book_append_sheet(wb, wsMatched, "Matched");
 
-    const wsAbsent = XLSX.utils.json_to_sheet(absent.map(a => ({
-      'Registered Name': a.Name,
-      'Phone': a.Phone,
-      'Email': a.Email,
-      'WhatsApp/Email Message': `Hey ${a.Name}, we missed you at the Zoom call today!`
-    })));
-    XLSX.utils.book_append_sheet(wb, wsAbsent, "Absent");
-
     const wsUnmatchedZoom = XLSX.utils.json_to_sheet(unmatchedZoom.filter(z => !z.ignored).map(z => ({
       'Zoom Name': z.Name,
       'Zoom Email': z.Email,
       'Total Attended (Mins)': z.Duration
     })));
     XLSX.utils.book_append_sheet(wb, wsUnmatchedZoom, "Unmatched Zoom Users");
-
-    const wsIgnored = XLSX.utils.json_to_sheet(unmatchedZoom.filter(z => z.ignored).map(z => ({
-      'Zoom Name': z.Name,
-      'Zoom Email': z.Email,
-      'Total Attended (Mins)': z.Duration
-    })));
-    XLSX.utils.book_append_sheet(wb, wsIgnored, "Ignored Zoom Users");
 
     XLSX.writeFile(wb, "Attendance_Report.xlsx");
     toast.success("Report downloaded successfully!");
@@ -583,11 +568,6 @@ export default function App() {
                   <div>
                     <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Unknown</p>
                     <p className="text-3xl font-black text-orange-400">{unmatchedZoom.filter(z => !z.ignored && !z.SuggestedMatch && !z.isDevice).length}</p>
-                  </div>
-                  <div className="w-px h-12 bg-slate-100"></div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-1">Absent</p>
-                    <p className="text-3xl font-black text-red-400">{absent.length}</p>
                   </div>
                 </div>
                 <button
